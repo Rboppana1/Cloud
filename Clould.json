@@ -1,0 +1,307 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Resources": {
+    "CloudProject2VPC": {
+      "Type": "AWS::EC2::VPC",
+      "Properties": {
+        "CidrBlock": "10.0.0.0/16",
+        "EnableDnsHostnames": "true",
+        "EnableDnsSupport": "true",
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "CloudProject2VPC"
+          }
+        ]
+      }
+    },
+    "Subnet1": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "VpcId": {
+          "Ref": "CloudProject2VPC"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "Subnet1"
+          }
+        ],
+        "CidrBlock": "10.0.1.0/24",
+        "AvailabilityZone": "us-east-1a",
+        "MapPublicIpOnLaunch": "true"
+      }
+    },
+    "CloudProjectSG": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "SecurityGroupIngress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": 80,
+            "ToPort": 80,
+            "CidrIp": "0.0.0.0/0"
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": 22,
+            "ToPort": 22,
+            "CidrIp": "0.0.0.0/0"
+          }
+        ],
+        "VpcId": {
+          "Ref": "CloudProject2VPC"
+        },
+        "GroupDescription": "Allows HTTP and SSH",
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "CloudProject2VPC"
+          }
+        ]
+      }
+    },
+    "CloudProjectEC2": {
+      "Type": "AWS::EC2::Instance",
+      "Properties": {
+        "InstanceType": "t2.micro",
+        "ImageId": "ami-0747bdcabd34c712a",
+        "KeyName": "awstest1",
+        "IamInstanceProfile": "",
+        "NetworkInterfaces": [
+          {
+            "SubnetId": {
+              "Ref": "Subnet1"
+            },
+            "GroupSet": [
+              {
+                "Ref": "CloudProjectSG"
+              }
+            ],
+            "DeviceIndex": "0",
+            "DeleteOnTermination": "true"
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "CloudProject2"
+          }
+        ],
+        "UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
+          "#!/bin/bash -xe\n",
+          "sudo apt update\n",
+          "sudo apt install ruby-full -y\n",
+          "sudo apt install wget\n",
+          "cd /home/ubuntu\n",
+          "wget https://aws-codedeploy-us-east-1.s3.us-east-1.amazonaws.com/latest/install\n",
+          "chmod +x install\n",
+"sudo ./install auto\n"
+           ]]}}
+      }
+    },
+    "CloudProject2IG": {
+              "Type": "AWS::EC2::InternetGateway",
+              "Properties": {
+          "Tags" : [ {"Key" : "Name", "Value" : "CloudProject2IG"} ]            
+              }
+          },
+    "RouteTable1" : {
+        "Type" : "AWS::EC2::RouteTable",
+        "Properties" : {
+            "VpcId" : { "Ref" : "CloudProject2VPC" },
+            "Tags" : [ {"Key" : "Name", "Value" : "RouteTable1"} ]
+        }
+      },
+
+"mySubnetRouteTableAssociation" : {
+   "Type" : "AWS::EC2::SubnetRouteTableAssociation",
+   "Properties" : {
+      "SubnetId" : { "Ref" : "Subnet1" },
+      "RouteTableId" : { "Ref" : "RouteTable1" }
+   }
+},
+
+      "myRoute1" : {
+        "Type" : "AWS::EC2::Route",
+        "Properties" : {
+            "RouteTableId" : { "Ref" : "RouteTable1" },
+            "DestinationCidrBlock" : "0.0.0.0/0",
+            "GatewayId" : { "Ref" : "CloudProject2IG" }
+        }
+    },
+      "IGAttachment" : {
+        "Type" : "AWS::EC2::VPCGatewayAttachment",
+        "Properties" : {
+          "InternetGatewayId" : { "Ref" : "CloudProject2IG"},
+          "VpcId" : { "Ref" : "CloudProject2VPC"}
+        }
+    },
+    "CloudProjectKS": {
+      "Type": "AWS::Kinesis::Stream",
+      "Properties": {
+        "Name": "m03p02_raw_data_stream",
+        "RetentionPeriodHours": 24,
+        "ShardCount": 1,
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "CloudProject2"
+          }
+        ]
+      }
+    },
+    "CloudProjectTopic": {
+      "Type": "AWS::SNS::Topic",
+      "Properties": {
+        "DisplayName": "CloudProject2Topic",
+        "FifoTopic": false,
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "CloudProject2"
+          }
+        ],
+        "TopicName": "m03p02_anomaly_alerts"
+      }
+    },
+    "CloudProjectTopicSubscription": {
+      "Type": "AWS::SNS::Subscription",
+      "Properties": {
+        "Endpoint": "<mail_id>",
+        "Protocol": "email",
+        "TopicArn": {
+          "Ref": "CloudProjectTopic"
+        }
+      }
+    },
+    "CloudProjectDB": {
+      "Type": "AWS::DynamoDB::Table",
+      "Properties": {
+        "AttributeDefinitions": [
+          {
+            "AttributeName": "deviceid",
+            "AttributeType": "S"
+          },
+          {
+            "AttributeName": "timestamp",
+            "AttributeType": "S"
+          }
+        ],
+        "KeySchema": [
+          {
+            "AttributeName": "deviceid",
+            "KeyType": "HASH"
+          },
+          {
+            "AttributeName": "timestamp",
+            "KeyType": "RANGE"
+          }
+        ],
+        "TableName": "m03p02_anomaly_data",
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "TestDynamoDB"
+          }
+        ],
+        "ProvisionedThroughput": {
+          "ReadCapacityUnits": 5,
+          "WriteCapacityUnits": 5
+        }
+      }
+    },
+    "CloudProjectLambda": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "Runtime": "python3.7",
+        "Handler": "index.lambda_handler",
+        "FunctionName": "m03p02_anomaly_data_Lambda",
+        "Role": "arn:aws:iam::<account_id>:role/ClouldProjectLambdaAccesses",
+        "Environment": {
+          "Variables": {
+            "snsArn": {
+              "Ref": "CloudProjectTopic"
+            }
+          }
+        },
+        "Code": {
+          "ZipFile": {
+            "Fn::Join": [
+              "\n",
+              [
+                "from pprint import pprint",
+                "import boto3",
+                "import json",
+                "import csv",
+                "import datetime",
+                "import os",
+                "import random",
+                "import base64",
+                "from decimal import Decimal",
+                "from botocore.exceptions import ClientError",
+                "def lambda_handler(event, context):",
+                  " AWS_REGION = 'us-east-1'",
+                  " #print(event)",
+                  " dynamodb_res = boto3.resource('dynamodb', region_name=AWS_REGION)",
+                  " anomaly_table = dynamodb_res.Table('m03p02_anomaly_data')",
+                  " sns_client = boto3.client('sns', region_name=AWS_REGION)",
+                  " topic_arn = 'arn:aws:sns:us-east-1:<account_id>:m03p02_anomaly_alerts'",
+                  " for record in event['Records']:",
+                      "  data_point = base64.b64decode(record['kinesis']['data'])",
+                      "  data_point = str(data_point, 'utf-8')",
+                      "  data_point = json.loads(data_point)",
+                      "  print(data_point)",
+                      "  anomaly_type ={}",
+
+                      "  if data_point['value'] <= (1.1 * float(data_point['lowest_temp'])):",
+                            "    anomaly_type = 'Cold'",
+                     "  elif data_point['value'] >= (0.9 * float(data_point['highest_point'])):",
+                           "     anomaly_type = 'Hot'",
+
+                    "  anomaly_data = {'deviceid': data_point['deviceid'], ",
+                        "  'anomalyDate': data_point['date'], ",
+                        "  'timestamp': data_point['timestamp'],",
+                        "  'value': data_point['value'],",
+                        "  'anomalyType': anomaly_type}",
+    
+                    "  anomaly_data = json.loads(json.dumps(anomaly_data), parse_float=Decimal)",
+                    "  print('Data to be pushed:',anomaly_data)",
+                    "  response = anomaly_table.put_item(Item=anomaly_data)",
+                    "  print(response)",
+                    "  sns_client.publish(TopicArn=topic_arn, Message=str('Anomaly value = ' + str(anomaly_data['value']) + ' is detected. ' + 'Detcted temperature can be categorized as ' + anomaly_data['anomalyType']) ,  Subject=str(anomaly_data['anomalyType'] + ' temperature is detected.'))",
+                    "  return 1",
+              ]
+            ]
+          }
+        }
+      }
+    },
+    "EventSourceMapping": {
+      "Type": "AWS::Lambda::EventSourceMapping",
+      "Properties" : {
+      "BatchSize" : 100,
+      "Enabled" : true,
+      "EventSourceArn" : {
+        "Fn::GetAtt": [
+          "CloudProjectKS",
+"Arn"
+        ]
+      },
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "CloudProjectLambda",
+"Arn"
+          ]
+        },
+        "StartingPosition": "TRIM_HORIZON"
+      }
+    },
+    "CloudProjectS3": {
+      "Type": "AWS::S3::Bucket",
+      "Properties": {
+        "BucketName": "m03p02-code-deploy-s3"
+      }
+    }
+  }
+}
